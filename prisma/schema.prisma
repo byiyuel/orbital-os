@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Country {
+  id        String   @id @default(cuid())
+  isoCode   String   @unique @db.VarChar(3)
+  name      String
+  region    String?
+  metrics   Metric[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Metric {
+  id          String   @id @default(cuid())
+  countryId   String
+  country     Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  indicator   String   // Örn: "INFLATION", "GDP", "UNEMPLOYMENT"
+  value       Float
+  date        DateTime // Verinin ait olduğu yıl/ay
+  source      String   // Örn: "WorldBank", "FRED", "EVDS"
+  createdAt   DateTime @default(now())
+
+  @@index([countryId, indicator, date])
+}
