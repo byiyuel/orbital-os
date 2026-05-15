@@ -4,28 +4,39 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model Country {
-  id        String   @id @default(cuid())
-  isoCode   String   @unique @db.VarChar(3)
-  name      String
-  region    String?
-  metrics   Metric[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String             @id @default(cuid())
+  code        String             @unique
+  name        String
+  region      String?
+  incomeGroup String?
+  snapshots   EconomicSnapshot[]
+  favorites   UserFavorite[]
 }
 
-model Metric {
+model EconomicSnapshot {
+  id           String   @id @default(cuid())
+  countryCode  String
+  country      Country  @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  year         Int
+  gdp          Float?
+  gdpGrowth    Float?
+  inflation    Float?
+  debtToGdp    Float?
+  unemployment Float?
+  createdAt    DateTime @default(now())
+
+  @@index([countryCode, year])
+}
+
+model UserFavorite {
   id          String   @id @default(cuid())
-  countryId   String
-  country     Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
-  indicator   String   // Örn: "INFLATION", "GDP", "UNEMPLOYMENT"
-  value       Float
-  date        DateTime // Verinin ait olduğu yıl/ay
-  source      String   // Örn: "WorldBank", "FRED", "EVDS"
+  sessionId   String
+  countryCode String
+  country     Country  @relation(fields: [countryCode], references: [code], onDelete: Cascade)
   createdAt   DateTime @default(now())
 
-  @@index([countryId, indicator, date])
+  @@index([sessionId])
 }

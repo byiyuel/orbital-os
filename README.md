@@ -7,7 +7,7 @@ Orbital_OS is a high-end, interactive 3D macroeconomic dashboard built with Next
 *   **Interactive 3D Grid:** A high-fidelity Three.js globe serving as a navigation portal to dynamic country dashboards.
 *   **Live Data Uplink:** Seamless integration with the **World Bank Open Data API** for real-time GDP, inflation, and growth metrics.
 *   **Tactical HUD Interface:** A premium cyberpunk-luxury aesthetic with glassmorphism, neon emerald accents, and scanline effects.
-*   **Dynamic Analytics:** Categorized time-series charts using **Recharts** for deep-dive economic progression analysis.
+*   **Dynamic Analytics:** Categorized time-series charts using **D3.js** for deep-dive economic progression analysis.
 *   **Quant-Ready Architecture:** 
     *   **Secure Fetching:** All API keys and data streams are handled via Server Components (ISR).
     *   **High Performance:** Incremental Static Regeneration (ISR) ensures 24-hour caching for lightning-fast loads.
@@ -17,7 +17,7 @@ Orbital_OS is a high-end, interactive 3D macroeconomic dashboard built with Next
 
 *   **Framework:** Next.js 15 (App Router)
 *   **3D Engine:** Three.js
-*   **Data Visualization:** D3.js & Recharts
+*   **Data Visualization:** D3.js (Charts & Globe)
 *   **Styling:** Tailwind CSS 4
 *   **Database:** PostgreSQL & Prisma (Schema ready for historical data storage)
 *   **Icons:** Lucide-React
@@ -29,8 +29,27 @@ Orbital_OS is a high-end, interactive 3D macroeconomic dashboard built with Next
     ```bash
     npm install
     ```
-3.  **Environment Setup:**
-    Copy `.env.example` to `.env` and provide your API keys (optional for World Bank).
+## Environment Setup
+
+Orbital OS requires several environment variables to function correctly. Follow these steps to set up your local environment:
+
+1.  **Copy the template:**
+    ```bash
+    cp .env.example .env
+    cp .env.local.example .env.local
+    ```
+
+2.  **Configure Core Variables:**
+    - `WORLD_BANK_API_URL`: Pre-configured to `https://api.worldbank.org/v2`.
+    - `DATABASE_URL`: Set this to your PostgreSQL connection string for Prisma features.
+    - `NEXT_PUBLIC_APP_URL`: Set to `http://localhost:3000` for local development.
+
+3.  **Optional API Keys:**
+    - `FRED_API_KEY`: Required for Federal Reserve data modules.
+    - `TCMB_API_KEY`: Required for Turkey-specific market analysis.
+
+See `.env.example` for more details on where to obtain these keys.
+
 4.  **Launch the Grid:**
     ```bash
     npm run dev

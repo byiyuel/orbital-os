@@ -6,6 +6,7 @@ import * as d3 from "d3";
 import * as topojson from "topojson-client";
 import { useRouter } from "next/navigation";
 import { Activity, Globe as GlobeIcon, Zap, Shield, Cpu } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 // --- Comprehensive ISO Mapping ---
 const ISO_MAP: Record<string, string> = {
@@ -51,24 +52,36 @@ const WB_GDP_INDICATOR = "NY.GDP.MKTP.CD";
 
 export default function Globe() {
   const router = useRouter();
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState("INITIALIZING");
   const [terminalId, setTerminalId] = useState("");
   const [hoveredCountry, setHoveredCountry] = useState<any>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Check prefers-reduced-motion
+  const [shouldAnimate, setShouldAnimate] = useState(true);
+  useEffect(() => {
+    setShouldAnimate(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }, []);
 
   useEffect(() => {
     setTerminalId(Math.random().toString(36).substr(2, 9).toUpperCase());
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !containerRef.current) return;
 
     let mounted = true;
     let frameId: number;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    
+    // Detect mobile
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(40, width / height, 1, 3000);
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 3000);
     camera.position.z = 550;
 
     const renderer = new THREE.WebGLRenderer({ 
@@ -76,7 +89,6 @@ export default function Globe() {
       antialias: true, 
       alpha: true 
     });
-    renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -96,8 +108,11 @@ export default function Globe() {
     
     const colorScale = d3.scaleLog<string>().domain([1e9, 4e13]).range(["#021a10", "#00ff88"]);
 
+    // Performance adjustment for mobile: lower geometry segments
+    const segments = window.innerWidth < 768 ? 64 : 128;
+    
     const globeTex = new THREE.CanvasTexture(texCanvas);
-    const globeGeo = new THREE.SphereGeometry(150, 128, 128);
+    const globeGeo = new THREE.SphereGeometry(150, segments, segments);
     const globeMat = new THREE.MeshLambertMaterial({ 
       map: globeTex,
       transparent: true,
@@ -108,7 +123,7 @@ export default function Globe() {
     globeGroup.add(globe);
     scene.add(globeGroup);
 
-    const rimGeo = new THREE.SphereGeometry(152, 128, 128);
+    const rimGeo = new THREE.SphereGeometry(152, segments, segments);
     const rimMat = new THREE.MeshBasicMaterial({ 
       color: 0x00ff88, 
       transparent: true, 
@@ -161,7 +176,7 @@ export default function Globe() {
         drawMap();
         setLoading(false);
 
-        setSyncStatus("SYNCING_LIVE");
+        setSyncStatus("LOADING_DATA");
         const gdpRes = await fetch(`https://api.worldbank.org/v2/country/all/indicator/${WB_GDP_INDICATOR}?format=json&per_page=300&date=2022:2023`);
         const gdpJson = await gdpRes.json();
         if (!mounted) return;
@@ -184,21 +199,32 @@ export default function Globe() {
     let prevMouse = { x: 0, y: 0 };
     let rotationSpeed = { x: 0.001, y: 0 };
 
-    const onMouseDown = (e: MouseEvent) => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; };
-    const onMouseMove = (e: MouseEvent) => {
+    const onStart = (clientX: number, clientY: number) => {
+      isDragging = true;
+      prevMouse = { x: clientX, y: clientY };
+    };
+
+    const onMove = (clientX: number, clientY: number) => {
       if (isDragging) {
-        const dx = e.clientX - prevMouse.x;
-        const dy = e.clientY - prevMouse.y;
+        const dx = clientX - prevMouse.x;
+        const dy = clientY - prevMouse.y;
         globeGroup.rotation.y += dx * 0.002;
         globeGroup.rotation.x += dy * 0.002;
         rotationSpeed = { x: dx * 0.001, y: dy * 0.001 };
-        prevMouse = { x: e.clientX, y: e.clientY };
+        prevMouse = { x: clientX, y: clientY };
       }
-      handleRaycast(e);
+      handleRaycast(clientX, clientY);
     };
-    const onMouseUp = (e: MouseEvent) => {
+
+    const onEnd = (clientX: number, clientY: number) => {
+      if (!isDragging) return;
       isDragging = false;
-      const mouseVec = new THREE.Vector2((e.clientX / width) * 2 - 1, -(e.clientY / height) * 2 + 1);
+      
+      const rect = containerRef.current!.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      
+      const mouseVec = new THREE.Vector2(x, y);
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouseVec, camera);
       const intersects = raycaster.intersectObject(globe);
@@ -216,9 +242,14 @@ export default function Globe() {
       }
     };
 
-    const handleRaycast = (e: MouseEvent) => {
-      if (!tooltipRef.current) return;
-      const mouseVec = new THREE.Vector2((e.clientX / width) * 2 - 1, -(e.clientY / height) * 2 + 1);
+    const handleRaycast = (clientX: number, clientY: number) => {
+      if (!tooltipRef.current || !containerRef.current) return;
+      
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      const mouseVec = new THREE.Vector2(x, y);
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouseVec, camera);
       const intersects = raycaster.intersectObject(globe);
@@ -238,24 +269,60 @@ export default function Globe() {
             status: data ? "LINK_ACTIVE" : "NO_DATA"
           });
 
-          tooltipRef.current.style.display = "block";
-          tooltipRef.current.style.left = `${e.clientX + 15}px`;
-          tooltipRef.current.style.top = `${e.clientY + 15}px`;
-          tooltipRef.current.innerHTML = `
-            <div class="flex items-center gap-2 mb-1">
-              <span class="w-1.5 h-1.5 bg-[#00ff88] rounded-full shadow-[0_0_5px_#00ff88]"></span>
-              <span class="font-bold tracking-tight">${country.properties.name.toUpperCase()}</span>
-            </div>
-            <div class="text-[9px] text-[#00ff88]/60 font-mono tracking-widest">
-              NODE: ${iso3} | GDP: ${data?.gdp ? "$" + (data.gdp/1e9).toFixed(1) + "B" : "SYNCING"}
-            </div>
-          `;
+          // Disable tooltip on mobile
+          if (window.innerWidth >= 768) {
+            tooltipRef.current.style.display = "block";
+            tooltipRef.current.style.left = `${clientX + 15}px`;
+            tooltipRef.current.style.top = `${clientY + 15}px`;
+            tooltipRef.current.innerHTML = `
+              <div class="flex items-center gap-2 mb-1">
+                <span class="w-1.5 h-1.5 bg-[#00ff88] rounded-full shadow-[0_0_5px_#00ff88]"></span>
+                <span class="font-bold tracking-tight">${country.properties.name.toUpperCase()}</span>
+              </div>
+              <div class="text-[9px] text-[#00ff88]/60 font-mono tracking-widest">
+                NODE: ${iso3} | GDP: ${data?.gdp ? "$" + (data.gdp/1e9).toFixed(1) + "B" : "SYNCING"}
+              </div>
+            `;
+          }
           return;
         }
       }
       tooltipRef.current.style.display = "none";
-      setHoveredCountry(null);
+      // Don't clear hoveredCountry immediately on mobile to allow viewing the bottom sheet
+      if (window.innerWidth >= 768) {
+        setHoveredCountry(null);
+      }
     };
+
+    // Event Handlers
+    const handleMouseDown = (e: MouseEvent) => onStart(e.clientX, e.clientY);
+    const handleMouseMove = (e: MouseEvent) => onMove(e.clientX, e.clientY);
+    const handleMouseUp = (e: MouseEvent) => onEnd(e.clientX, e.clientY);
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      onStart(touch.clientX, touch.clientY);
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      onMove(touch.clientX, touch.clientY);
+    };
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      onEnd(touch.clientX, touch.clientY);
+    };
+
+    // ResizeObserver for dynamic scaling
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        renderer.setSize(width, height);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        checkMobile();
+      }
+    });
+    resizeObserver.observe(containerRef.current);
 
     const animate = () => {
       if (!mounted) return;
@@ -272,16 +339,27 @@ export default function Globe() {
     loadEverything();
     animate();
 
-    window.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    const container = containerRef.current;
+    container.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    
+    container.addEventListener("touchstart", handleTouchStart, { passive: true });
+    container.addEventListener("touchmove", handleTouchMove, { passive: true });
+    container.addEventListener("touchend", handleTouchEnd, { passive: true });
 
     return () => {
       mounted = false;
       cancelAnimationFrame(frameId);
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      resizeObserver.disconnect();
+      
+      container.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
       
       globeGeo.dispose();
       globeMat.dispose();
@@ -293,47 +371,51 @@ export default function Globe() {
   }, [router]);
 
   return (
-    <div className="w-full h-screen relative bg-[#02040a] overflow-hidden font-mono text-[#00ff88] cursor-crosshair">
-      <canvas ref={canvasRef} className="w-full h-full block" />
+    <div ref={containerRef} className="w-full h-screen relative bg-[#02040a] overflow-hidden font-mono text-[#00ff88] cursor-crosshair flex flex-col md:block">
+      <canvas ref={canvasRef} className="w-full h-[60vh] md:h-full block shrink-0" />
       <div className="scanline-effect"></div>
 
-      <div className="absolute top-0 left-0 w-32 h-32 border-t-2 border-l-2 border-[#00ff88]/20 m-6 pointer-events-none"></div>
-      <div className="absolute bottom-0 right-0 w-32 h-32 border-b-2 border-r-2 border-[#00ff88]/20 m-6 pointer-events-none"></div>
+      {/* Decorative tactical corners (Hidden on mobile) */}
+      <div className="hidden md:block absolute top-0 left-0 w-32 h-32 border-t-2 border-l-2 border-[#00ff88]/20 m-6 pointer-events-none"></div>
+      <div className="hidden md:block absolute bottom-0 right-0 w-32 h-32 border-b-2 border-r-2 border-[#00ff88]/20 m-6 pointer-events-none"></div>
 
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center z-[100] bg-[#02040a] animate-flicker">
-          <div className="max-w-md w-full px-12 space-y-8">
-            <div className="flex justify-center">
-              <div className="relative">
-                <Cpu className="w-16 h-12 text-[#00ff88] animate-pulse" />
-                <div className="absolute inset-0 blur-lg bg-[#00ff88]/20 animate-pulse"></div>
+      <AnimatePresence>
+        {loading && (
+          <motion.div 
+            initial={false}
+            exit={{ opacity: 0, transition: { duration: 0.8, ease: "easeInOut" } }}
+            className="absolute inset-0 flex items-center justify-center z-[100] bg-[#02040a] animate-flicker p-6"
+          >
+            <div className="max-w-md w-full space-y-8">
+              <div className="flex justify-center">
+                <div className="relative">
+                  <Cpu className="w-12 h-9 md:w-16 md:h-12 text-[#00ff88] animate-pulse" />
+                  <div className="absolute inset-0 blur-lg bg-[#00ff88]/20 animate-pulse"></div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between text-[9px] md:text-[10px] font-black tracking-[0.2em] opacity-40">
+                  <span>SYSTEM_BOOT</span>
+                  <span>v2.5.0_REFRESH</span>
+                </div>
+                <div className="h-1 w-full bg-[#00ff88]/10 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#00ff88] w-full animate-[loading_2s_ease-in-out_infinite]"></div>
+                </div>
+                <div className="grid grid-cols-1 gap-1">
+                  <div className="text-[8px] md:text-[9px] tracking-widest text-[#00ff88] flex items-center gap-3 uppercase">
+                    <span className="w-1 h-1 bg-[#00ff88] rounded-full animate-ping shrink-0"></span>
+                    Initializing_Neural_Grid...
+                  </div>
+                  <div className="text-[7px] md:text-[8px] tracking-widest opacity-30 uppercase font-bold truncate">
+                    &gt; {syncStatus === "READY" ? "DATA_CACHED_24H" : "FETCHING_WORLD_BANK_DATA"}
+                  </div>
+                </div>
               </div>
             </div>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between text-[10px] font-black tracking-[0.2em] opacity-40">
-                <span>SYSTEM_BOOT</span>
-                <span>v2.4.0_STABLE</span>
-              </div>
-              <div className="h-1 w-full bg-[#00ff88]/10 rounded-full overflow-hidden">
-                <div className="h-full bg-[#00ff88] w-full animate-[loading_2s_ease-in-out_infinite]"></div>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <div className="text-[9px] tracking-widest text-[#00ff88] flex items-center gap-3">
-                  <span className="w-1 h-1 bg-[#00ff88] rounded-full animate-ping"></span>
-                  INITIALIZING_NEURAL_GRID...
-                </div>
-                <div className="text-[8px] tracking-widest opacity-30 uppercase font-bold">
-                  {syncStatus === "READY" ? "&gt; UPLINK_ESTABLISHED" : "&gt; ESTABLISHING_ORBITAL_LINK"}
-                </div>
-                <div className="text-[8px] tracking-widest opacity-30 uppercase font-bold">
-                  &gt; BYPASSING_CORS_PROTOCOLS...
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style jsx>{`
         @keyframes loading {
@@ -342,74 +424,107 @@ export default function Globe() {
         }
       `}</style>
 
-      <div className="absolute top-12 left-12 p-8 glass-panel rounded-2xl z-10 select-none border-l-4 border-l-[#00ff88]">
-        <div className="flex items-center gap-4 mb-2">
-          <GlobeIcon className="text-[#00ff88] w-6 h-6" />
-          <h1 className="text-3xl font-black tracking-tighter text-white">ORBITAL_OS <span className="text-[#00ff88]">v2.4</span></h1>
+      {/* Main HUD Panel */}
+      <div className="absolute top-6 left-6 md:top-12 md:left-12 p-4 md:p-8 glass-panel rounded-xl md:rounded-2xl z-10 select-none border-l-4 border-l-[#00ff88] max-w-[calc(100%-3rem)] md:max-w-xs">
+        <div className="flex items-center gap-3 md:gap-4 mb-1 md:mb-2">
+          <GlobeIcon className="text-[#00ff88] w-5 h-5 md:w-6 md:h-6" />
+          <h1 className="text-xl md:text-3xl font-black tracking-tighter text-white">ORBITAL_OS <span className="text-[#00ff88]">v2.5</span></h1>
         </div>
-        <div className="text-[10px] text-[#00ff88]/40 uppercase tracking-[0.4em] font-bold">QUANTITATIVE_MACRO_GRID</div>
+        <div className="text-[8px] md:text-[10px] text-[#00ff88]/40 uppercase tracking-[0.3em] md:tracking-[0.4em] font-bold">QUANTITATIVE_MACRO_GRID</div>
         
-        <div className="mt-8 grid grid-cols-2 gap-6 opacity-80">
+        <div className="mt-4 md:mt-8 grid grid-cols-2 gap-4 md:gap-6 opacity-80">
           <div className="space-y-1">
-            <div className="text-[8px] uppercase tracking-widest font-bold text-[#00ff88]/50 flex items-center gap-2">
-              <Zap size={10} /> Link_Stability
+            <div className="text-[7px] md:text-[8px] uppercase tracking-widest font-bold text-[#00ff88]/50 flex items-center gap-2">
+              <Zap size={10} /> Stability
             </div>
-            <div className="text-xs font-bold text-white">99.98% / ENCRYPTED</div>
+            <div className="text-[10px] md:text-xs font-bold text-white truncate">99.9% / SECURE</div>
           </div>
           <div className="space-y-1">
-            <div className="text-[8px] uppercase tracking-widest font-bold text-[#00ff88]/50 flex items-center gap-2">
-              <Shield size={10} /> Grid_Status
+            <div className="text-[7px] md:text-[8px] uppercase tracking-widest font-bold text-[#00ff88]/50 flex items-center gap-2">
+              <Shield size={10} /> Status
             </div>
-            <div className="text-xs font-bold text-[#00ff88] animate-pulse uppercase">{syncStatus}</div>
+            <div className="text-[10px] md:text-xs font-bold text-[#00ff88] animate-pulse uppercase truncate">{syncStatus}</div>
           </div>
         </div>
       </div>
 
-      {/* Tactical Intelligence Panel (Right Side) */}
-      {hoveredCountry && (
-        <div className="absolute top-12 right-12 w-64 glass-panel rounded-2xl p-6 border-r-4 border-r-[#00ff88] animate-in fade-in slide-in-from-right-4 duration-300 z-10 select-none">
-          <div className="text-[8px] font-black tracking-[0.3em] opacity-40 mb-4 flex items-center gap-2 uppercase">
-            <Activity size={10} className="text-[#00ff88]" /> Tactical_Intelligence
-          </div>
-          
-          <h2 className="text-xl font-black tracking-tight text-white mb-6 uppercase leading-tight">
-            {hoveredCountry.name}
-          </h2>
-
-          <div className="space-y-4">
-            <div className="pb-3 border-b border-[#00ff88]/10">
-              <div className="text-[8px] opacity-40 uppercase tracking-widest mb-1 font-bold">Node_Identity</div>
-              <div className="text-xs font-mono text-[#00ff88]">ISO_{hoveredCountry.iso}</div>
+      {/* Mobile Bottom Sheet / Desktop Sidebar Panel */}
+      <AnimatePresence>
+        {hoveredCountry && (
+          <motion.div 
+            key={hoveredCountry.iso}
+            initial={shouldAnimate ? (isMobile ? { y: "100%" } : { x: 100, opacity: 0 }) : {}}
+            animate={shouldAnimate ? (isMobile ? { y: 0 } : { x: 0, opacity: 1 }) : {}}
+            exit={shouldAnimate ? (isMobile ? { y: "100%" } : { x: 100, opacity: 0 }) : {}}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className={`
+              absolute z-20 select-none
+              ${isMobile 
+                ? 'bottom-0 left-0 right-0 p-6 glass-panel rounded-t-3xl border-t-4 border-t-[#00ff88]' 
+                : 'top-12 right-12 w-64 glass-panel rounded-2xl p-6 border-r-4 border-r-[#00ff88]'
+              }
+            `}
+          >
+            {isMobile && (
+              <div className="w-12 h-1 bg-[#00ff88]/20 rounded-full mx-auto mb-6" onClick={() => setHoveredCountry(null)}></div>
+            )}
+            
+            <div className="text-[8px] font-black tracking-[0.3em] opacity-40 mb-4 flex items-center gap-2 uppercase">
+              <Activity size={10} className="text-[#00ff88]" /> Tactical_Intelligence
+            </div>
+            
+            <div className="flex justify-between items-start gap-4">
+              <h2 className="text-xl md:text-2xl font-black tracking-tight text-white uppercase leading-tight">
+                {hoveredCountry.name}
+              </h2>
+              {isMobile && (
+                <button 
+                  onClick={() => router.push(`/country/${hoveredCountry.iso.toLowerCase()}`)}
+                  className="px-4 py-2 bg-[#00ff88] text-black text-[10px] font-black uppercase tracking-widest rounded-lg shadow-[0_0_15px_#00ff8844]"
+                >
+                  Enter
+                </button>
+              )}
             </div>
 
-            <div className="pb-3 border-b border-[#00ff88]/10">
-              <div className="text-[8px] opacity-40 uppercase tracking-widest mb-1 font-bold">Gdp_Quant</div>
-              <div className="text-sm font-bold text-white tracking-tighter">
-                {hoveredCountry.gdp ? `$${(hoveredCountry.gdp/1e9).toFixed(2)}B` : "SYNCING..."}
+            <div className={`grid ${isMobile ? 'grid-cols-2 mt-6' : 'grid-cols-1 mt-6'} gap-4 md:gap-4`}>
+              <div className="pb-3 md:border-b border-[#00ff88]/10">
+                <div className="text-[8px] opacity-40 uppercase tracking-widest mb-1 font-bold">Node_Identity</div>
+                <div className="text-xs font-mono text-[#00ff88]">ISO_{hoveredCountry.iso}</div>
+              </div>
+
+              <div className="pb-3 md:border-b border-[#00ff88]/10">
+                <div className="text-[8px] opacity-40 uppercase tracking-widest mb-1 font-bold">Gdp_Quant</div>
+                <div className="text-sm font-bold text-white tracking-tighter">
+                  {hoveredCountry.gdp ? `$${(hoveredCountry.gdp/1e9).toFixed(2)}B` : "SYNCING..."}
+                </div>
+              </div>
+
+              <div className={isMobile ? 'col-span-2' : ''}>
+                <div className="text-[8px] opacity-40 uppercase tracking-widest mb-1 font-bold">Signal_Status</div>
+                <div className={`text-[10px] font-black tracking-widest uppercase flex items-center gap-2 ${hoveredCountry.status === 'LINK_ACTIVE' ? 'text-[#00ff88]' : 'text-yellow-500'}`}>
+                  <span className={`w-1 h-1 rounded-full ${hoveredCountry.status === 'LINK_ACTIVE' ? 'bg-[#00ff88] animate-ping' : 'bg-yellow-500'}`}></span>
+                  {hoveredCountry.status}
+                </div>
               </div>
             </div>
-
-            <div>
-              <div className="text-[8px] opacity-40 uppercase tracking-widest mb-1 font-bold">Signal_Status</div>
-              <div className={`text-[10px] font-black tracking-widest uppercase flex items-center gap-2 ${hoveredCountry.status === 'LINK_ACTIVE' ? 'text-[#00ff88]' : 'text-yellow-500'}`}>
-                <span className={`w-1 h-1 rounded-full ${hoveredCountry.status === 'LINK_ACTIVE' ? 'bg-[#00ff88] animate-ping' : 'bg-yellow-500'}`}></span>
-                {hoveredCountry.status}
-              </div>
+            
+            <div className="mt-8 text-[7px] opacity-20 uppercase font-black tracking-[0.2em] italic">
+              // {isMobile ? 'Use ENTER button for sector analysis' : 'Click to decrypt sector analysis'}
             </div>
-          </div>
-          
-          <div className="mt-8 text-[7px] opacity-20 uppercase font-black tracking-[0.2em] italic">
-            // Click to decrypt sector analysis
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div ref={tooltipRef} className="absolute hidden glass-panel border border-[#00ff88]/40 p-5 pointer-events-none z-50 rounded-xl shadow-2xl animate-in fade-in zoom-in duration-200" />
 
-      <div className="absolute bottom-12 left-12 flex gap-12 text-[9px] tracking-[0.3em] font-bold opacity-30 select-none">
-        <div>TERMINAL_ID: {terminalId || "LOADING..."}</div>
-        <div>REGION_SCAN: ACTIVE</div>
-        <div>UPLINK: WORLD_BANK_DB</div>
+      {/* Footer Info (Responsive visibility) */}
+      <div className="absolute bottom-6 left-6 md:bottom-12 md:left-12 flex flex-col md:flex-row gap-2 md:gap-12 text-[7px] md:text-[9px] tracking-[0.2em] md:tracking-[0.3em] font-bold opacity-30 select-none">
+        <div className="truncate">TERMINAL_ID: {terminalId || "LOADING..."}</div>
+        <div className="flex gap-4 md:gap-12">
+          <div>REGION_SCAN: ACTIVE</div>
+          <div className="hidden sm:block">SOURCE: WORLD_BANK (24H CACHE)</div>
+        </div>
       </div>
     </div>
   );

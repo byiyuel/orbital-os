@@ -1,5 +1,5 @@
-// Adapter to convert complex JSON from World Bank API into a format readable by Recharts
-export function adaptWorldBankDataForRecharts(rawData: any[]) {
+// Adapter to convert complex JSON from World Bank API into a format readable by D3
+export function adaptWorldBankDataForD3(rawData: any[]) {
   if (!rawData || !rawData[1] || !Array.isArray(rawData[1])) {
     return [];
   }
