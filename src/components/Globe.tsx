@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
 import { useRouter } from "next/navigation";
 import { Activity, Globe as GlobeIcon, Zap, Shield, Cpu } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { type LayerType, getColor, LAYER_CONFIGS, YEAR_MIN, YEAR_MAX } from "@/lib/color-scales";
+import LayerSelector from "@/components/globe/LayerSelector";
+import Legend from "@/components/globe/Legend";
+import TimelineSlider from "@/components/globe/TimelineSlider";
 
 // --- Comprehensive ISO Mapping ---
 const ISO_MAP: Record<string, string> = {
@@ -48,8 +52,6 @@ const FALLBACK_GDP: Record<string, any> = {
   "ITA": { gdp: 2250, name: "Italy" }
 };
 
-const WB_GDP_INDICATOR = "NY.GDP.MKTP.CD";
-
 export default function Globe() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -61,11 +63,41 @@ export default function Globe() {
   const [hoveredCountry, setHoveredCountry] = useState<any>(null);
   const [isMobile, setIsMobile] = useState(false);
 
+  // Choropleth layer state
+  const [activeLayer, setActiveLayer] = useState<LayerType>("gdp");
+  // Time machine state
+  const [activeYear, setActiveYear] = useState(2023);
+  const [isPlaying, setIsPlaying] = useState(false);
+  // All indicator data: { [indicator]: { [iso3]: { [year]: value } } }
+  const indicatorDataRef = useRef<Record<string, Record<string, Record<number, number>>>>({});
+  // Ref to trigger canvas redraws from React state changes
+  const redrawRef = useRef<((layer?: LayerType, year?: number) => void) | null>(null);
+
   // Check prefers-reduced-motion
   const [shouldAnimate, setShouldAnimate] = useState(true);
   useEffect(() => {
     setShouldAnimate(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }, []);
+
+  // Auto-play timer
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setActiveYear((prev) => {
+        if (prev >= YEAR_MAX) { setIsPlaying(false); return prev; }
+        return prev + 1;
+      });
+    }, 800);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  // Trigger canvas redraw when layer or year changes
+  useEffect(() => {
+    redrawRef.current?.(activeLayer, activeYear);
+  }, [activeLayer, activeYear]);
+
+  const handlePlayToggle = useCallback(() => setIsPlaying((p) => !p), []);
+  const handleYearChange = useCallback((y: number) => setActiveYear(y), []);
 
   useEffect(() => {
     setTerminalId(Math.random().toString(36).substr(2, 9).toUpperCase());
@@ -106,8 +138,6 @@ export default function Globe() {
     const projection = d3.geoEquirectangular().scale(texWidth / (2 * Math.PI)).translate([texWidth / 2, texHeight / 2]);
     const path = d3.geoPath(projection, texContext);
     
-    const colorScale = d3.scaleLog<string>().domain([1e9, 4e13]).range(["#021a10", "#00ff88"]);
-
     // Performance adjustment for mobile: lower geometry segments
     const segments = window.innerWidth < 768 ? 64 : 128;
     
@@ -134,6 +164,9 @@ export default function Globe() {
 
     let countries: any[] = [];
     let gdpData: Record<string, any> = { ...FALLBACK_GDP };
+    // Closure-local refs for current layer/year (updated via redrawRef)
+    let currentLayer: LayerType = "gdp";
+    let currentYear: number = 2023;
 
     const drawMap = () => {
       if (!texContext || !mounted) return;
@@ -151,20 +184,54 @@ export default function Globe() {
         texContext.beginPath(); texContext.moveTo(0, y); texContext.lineTo(texWidth, y); texContext.stroke();
       }
 
+      const layerConfig = LAYER_CONFIGS[currentLayer];
+      const indicatorKey = layerConfig.indicator;
+      const yearData = indicatorDataRef.current[indicatorKey];
+
       countries.forEach(feature => {
         const id = feature.id ? feature.id.toString().padStart(3, "0") : "";
         const iso3 = feature.properties?.iso_a3 || ISO_MAP[id] || id;
-        const data = gdpData[iso3];
+        
+        // Try to get value from the indicator dataset for the current year
+        let fillColor: string;
+        const countryYearData = yearData?.[iso3];
+        if (countryYearData) {
+          // Find the exact year or closest available
+          const value = countryYearData[currentYear] ?? null;
+          fillColor = getColor(currentLayer, value);
+        } else {
+          // Fallback to GDP absolute data for default view
+          const data = gdpData[iso3];
+          fillColor = data && data.gdp > 0 ? getColor(currentLayer, null) : "rgba(0, 255, 136, 0.03)";
+        }
         
         texContext.beginPath();
         path(feature);
-        texContext.fillStyle = data && data.gdp > 0 ? colorScale(data.gdp) : "rgba(0, 255, 136, 0.03)"; 
+        texContext.fillStyle = fillColor;
         texContext.fill();
-        texContext.strokeStyle = data ? "rgba(0, 255, 136, 0.3)" : "rgba(0, 255, 136, 0.1)";
+        const hasData = yearData?.[iso3]?.[currentYear] != null;
+        texContext.strokeStyle = hasData ? "rgba(0, 255, 136, 0.3)" : "rgba(0, 255, 136, 0.08)";
         texContext.lineWidth = 1;
         texContext.stroke();
       });
       globeTex.needsUpdate = true;
+    };
+
+    // Expose redraw to React state changes — pass layer/year directly
+    redrawRef.current = (layer?: LayerType, year?: number) => {
+      if (layer !== undefined) currentLayer = layer;
+      if (year !== undefined) currentYear = year;
+      drawMap();
+    };
+
+    const fetchIndicator = async (indicator: string, dateRange: string) => {
+      try {
+        const res = await fetch(
+          `https://api.worldbank.org/v2/country/all/indicator/${indicator}?format=json&per_page=10000&date=${dateRange}`
+        );
+        const json = await res.json();
+        return json?.[1] || [];
+      } catch { return []; }
     };
 
     const loadEverything = async () => {
@@ -177,19 +244,39 @@ export default function Globe() {
         setLoading(false);
 
         setSyncStatus("LOADING_DATA");
-        const gdpRes = await fetch(`https://api.worldbank.org/v2/country/all/indicator/${WB_GDP_INDICATOR}?format=json&per_page=300&date=2022:2023`);
-        const gdpJson = await gdpRes.json();
-        if (!mounted) return;
+        // Fetch all three indicators for full historical range
+        const indicators = [
+          { key: "NY.GDP.PCAP.CD", label: "GDP per capita" },
+          { key: "FP.CPI.TOTL.ZG", label: "Inflation" },
+          { key: "NY.GDP.MKTP.KD.ZG", label: "Growth" },
+        ];
         
-        if (gdpJson && gdpJson[1]) {
-          gdpJson[1].forEach((v: any) => {
-            if (v.value && (!gdpData[v.countryiso3code] || v.date > gdpData[v.countryiso3code].date)) {
-              gdpData[v.countryiso3code] = { gdp: v.value, name: v.country.value, date: v.date };
+        for (const ind of indicators) {
+          const entries = await fetchIndicator(ind.key, `${YEAR_MIN}:${YEAR_MAX}`);
+          if (!mounted) return;
+          
+          if (!indicatorDataRef.current[ind.key]) {
+            indicatorDataRef.current[ind.key] = {};
+          }
+          
+          entries.forEach((v: any) => {
+            if (v.value == null || !v.countryiso3code) return;
+            const iso3 = v.countryiso3code;
+            const year = parseInt(v.date);
+            if (isNaN(year)) return;
+            if (!indicatorDataRef.current[ind.key][iso3]) {
+              indicatorDataRef.current[ind.key][iso3] = {};
+            }
+            indicatorDataRef.current[ind.key][iso3][year] = v.value;
+            // Also populate gdpData for tooltip/name fallback
+            if (ind.key === "NY.GDP.PCAP.CD" && (!gdpData[iso3] || year > (gdpData[iso3].date || 0))) {
+              gdpData[iso3] = { gdp: v.value, name: v.country?.value || iso3, date: year };
             }
           });
-          setSyncStatus("READY");
-          drawMap();
         }
+        
+        setSyncStatus("READY");
+        drawMap();
       } catch (err) {
         if (mounted) setSyncStatus("OFFLINE");
       }
@@ -197,11 +284,15 @@ export default function Globe() {
 
     let isDragging = false;
     let prevMouse = { x: 0, y: 0 };
+    let startMouse = { x: 0, y: 0 };
     let rotationSpeed = { x: 0.001, y: 0 };
+    const CLICK_THRESHOLD = 5; // pixels — anything above this is a drag, not a click
+    let dragCooldownUntil = 0; // timestamp — auto-rotation pauses until this time
 
     const onStart = (clientX: number, clientY: number) => {
       isDragging = true;
       prevMouse = { x: clientX, y: clientY };
+      startMouse = { x: clientX, y: clientY };
     };
 
     const onMove = (clientX: number, clientY: number) => {
@@ -219,6 +310,11 @@ export default function Globe() {
     const onEnd = (clientX: number, clientY: number) => {
       if (!isDragging) return;
       isDragging = false;
+      dragCooldownUntil = Date.now() + 3000; // 3s pause before auto-rotation resumes
+
+      // Only navigate if this was a click (not a drag)
+      const dragDist = Math.hypot(clientX - startMouse.x, clientY - startMouse.y);
+      if (dragDist > CLICK_THRESHOLD) return;
       
       const rect = containerRef.current!.getBoundingClientRect();
       const x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -327,7 +423,7 @@ export default function Globe() {
     const animate = () => {
       if (!mounted) return;
       frameId = requestAnimationFrame(animate);
-      if (!isDragging) {
+      if (!isDragging && Date.now() > dragCooldownUntil) {
         globeGroup.rotation.y += rotationSpeed.x;
         globeGroup.rotation.x += rotationSpeed.y;
         rotationSpeed.x *= 0.98; rotationSpeed.y *= 0.98;
@@ -518,13 +614,27 @@ export default function Globe() {
 
       <div ref={tooltipRef} className="absolute hidden glass-panel border border-[#00ff88]/40 p-5 pointer-events-none z-50 rounded-xl shadow-2xl animate-in fade-in zoom-in duration-200" />
 
-      {/* Footer Info (Responsive visibility) */}
-      <div className="absolute bottom-6 left-6 md:bottom-12 md:left-12 flex flex-col md:flex-row gap-2 md:gap-12 text-[7px] md:text-[9px] tracking-[0.2em] md:tracking-[0.3em] font-bold opacity-30 select-none">
-        <div className="truncate">TERMINAL_ID: {terminalId || "LOADING..."}</div>
-        <div className="flex gap-4 md:gap-12">
-          <div>REGION_SCAN: ACTIVE</div>
-          <div className="hidden sm:block">SOURCE: WORLD_BANK (24H CACHE)</div>
-        </div>
+
+
+      {/* Layer Selector + Legend — right side below country panel */}
+      <div className="hidden md:flex absolute bottom-28 right-12 z-10 flex-col gap-3">
+        <LayerSelector activeLayer={activeLayer} onLayerChange={(layer) => { setActiveLayer(layer); setTimeout(() => redrawRef.current?.(layer, activeYear), 0); }} />
+        <Legend activeLayer={activeLayer} />
+      </div>
+
+      {/* Timeline Slider — bottom center */}
+      <div className="absolute bottom-4 left-4 right-4 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[600px] lg:w-[700px] z-10">
+        <TimelineSlider
+          year={activeYear}
+          onYearChange={(y) => { setActiveYear(y); setTimeout(() => redrawRef.current?.(activeLayer, y), 0); }}
+          isPlaying={isPlaying}
+          onPlayToggle={handlePlayToggle}
+        />
+      </div>
+
+      {/* Mobile Layer Selector (compact) */}
+      <div className="md:hidden absolute top-20 right-4 z-10">
+        <LayerSelector activeLayer={activeLayer} onLayerChange={(layer) => { setActiveLayer(layer); setTimeout(() => redrawRef.current?.(layer, activeYear), 0); }} />
       </div>
     </div>
   );

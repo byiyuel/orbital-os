@@ -7,20 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate",
     "test": "vitest",
     "test:coverage": "vitest --coverage"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0",
-    "@prisma/adapter-neon": "^7.8.0",
-    "@prisma/client": "^7.8.0",
     "@types/d3": "^7.4.3",
     "@types/three": "^0.173.0",
     "@types/topojson-client": "^3.1.5",
+    "@vercel/og": "^0.11.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "d3": "^7.9.0",
@@ -31,8 +25,7 @@
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "three": "^0.173.0",
-    "topojson-client": "^3.1.0",
-    "ws": "^8.20.1"
+    "topojson-client": "^3.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -45,7 +38,6 @@
     "eslint": "^9",
     "eslint-config-next": "15.2.0",
     "jsdom": "^29.1.1",
-    "prisma": "^7.8.0",
     "tailwindcss": "^4",
     "tsx": "^4.22.0",
     "typescript": "^5",

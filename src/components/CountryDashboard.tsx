@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition } from "react";
 import { adaptWorldBankDataForD3, getLatestValue, formatFinancial } from "@/utils/adapters";
 import EconomicChart from "@/components/charts/EconomicChart";
 import SummaryCard from "@/components/SummaryCard";
-import { ArrowLeft, Activity, Users, TrendingUp, BarChart3, Database, Wallet, Search, X, Loader2, RefreshCw, Clock } from "lucide-react";
+import { ArrowLeft, Activity, Users, TrendingUp, BarChart3, Database, Wallet, Search, X, Loader2, RefreshCw, Clock, Share2, Check } from "lucide-react";
 import Link from "next/link";
 import { revalidateCountryData } from "@/app/actions";
 import { motion, AnimatePresence } from "framer-motion";
@@ -55,6 +55,7 @@ export default function CountryDashboard({ countryCode, initialData }: Dashboard
   const [searchQuery, setSearchQuery] = useState("");
   const [isPending, startTransition] = useTransition();
   const [lastRefreshed, setLastRefreshed] = useState<string>(new Date().toISOString());
+  const [shareToast, setShareToast] = useState(false);
   const searchParams = useSearchParams();
 
   const handleRefresh = () => {
@@ -139,6 +140,18 @@ export default function CountryDashboard({ countryCode, initialData }: Dashboard
           }`}
         >
           {isComparing ? '[ CLOSE_COMPARISON ]' : '[ ACTIVATE_COMPARE_MODE ]'}
+        </button>
+
+        <button
+          onClick={async () => {
+            await navigator.clipboard.writeText(window.location.href);
+            setShareToast(true);
+            setTimeout(() => setShareToast(false), 2500);
+          }}
+          className="px-4 py-2 border border-[#00ff88]/40 text-[#00ff88] hover:bg-[#00ff88]/10 font-black text-[10px] tracking-[0.2em] uppercase transition-all flex items-center gap-2"
+        >
+          {shareToast ? <Check size={12} /> : <Share2 size={12} />}
+          {shareToast ? 'LINK_COPIED!' : 'SHARE'}
         </button>
       </div>
 

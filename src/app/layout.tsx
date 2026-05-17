@@ -14,11 +14,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Orbital OS — Global Economic Matrix",
-  description: "Real-time 3D macroeconomic dashboard. Interactive globe visualization powered by World Bank Open Data.",
+  description: "Interactive 3D macroeconomic dashboard. Interactive globe visualization powered by World Bank Open Data.",
   metadataBase: new URL("https://orbital-os.vercel.app"), // Placeholder URL
   openGraph: {
     title: "Orbital OS — Global Economic Matrix",
-    description: "Real-time 3D macroeconomic dashboard. Interactive globe visualization powered by World Bank Open Data.",
+    description: "Interactive 3D macroeconomic dashboard. Interactive globe visualization powered by World Bank Open Data.",
     type: "website",
     url: "https://orbital-os.vercel.app",
     siteName: "Orbital OS",
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Orbital OS — Global Economic Matrix",
-    description: "Real-time 3D macroeconomic dashboard. Interactive globe visualization powered by World Bank Open Data.",
+    description: "Interactive 3D macroeconomic dashboard. Interactive globe visualization powered by World Bank Open Data.",
   },
 };
 

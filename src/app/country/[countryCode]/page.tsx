@@ -1,8 +1,59 @@
-import { getLatestValue } from "@/utils/adapters";
+import { getLatestValue, formatFinancial } from "@/utils/adapters";
 import CountryDashboard from "@/components/CountryDashboard";
+import type { Metadata } from "next";
 
 // On-demand revalidation via Server Action; fallback to 24h ISR
 export const revalidate = 86400;
+
+const COUNTRY_NAMES: Record<string, string> = {
+  usa: "United States", chn: "China", deu: "Germany", jpn: "Japan",
+  ind: "India", gbr: "United Kingdom", fra: "France", tur: "Turkey",
+  bra: "Brazil", ita: "Italy", can: "Canada", kor: "South Korea",
+  aus: "Australia", mex: "Mexico", esp: "Spain", idn: "Indonesia",
+  rus: "Russia", nld: "Netherlands", sau: "Saudi Arabia", che: "Switzerland",
+};
+
+export async function generateMetadata({ params }: { params: Promise<{ countryCode: string }> }): Promise<Metadata> {
+  const { countryCode } = await params;
+  const code = countryCode.toUpperCase();
+  const name = COUNTRY_NAMES[countryCode.toLowerCase()] || code;
+
+  // Fetch latest values for OG card
+  const fetchVal = async (indicator: string) => {
+    try {
+      const res = await fetch(`https://api.worldbank.org/v2/country/${code}/indicator/${indicator}?format=json&date=2020:2024&per_page=5`, { next: { revalidate: 86400 } });
+      const data = await res.json();
+      return getLatestValue(data)?.value ?? null;
+    } catch { return null; }
+  };
+
+  const [gdpVal, growthVal, inflVal] = await Promise.all([
+    fetchVal("NY.GDP.MKTP.CD"),
+    fetchVal("NY.GDP.MKTP.KD.ZG"),
+    fetchVal("FP.CPI.TOTL.ZG"),
+  ]);
+
+  const gdpStr = gdpVal ? formatFinancial(gdpVal) : "N/A";
+  const growthStr = growthVal?.toFixed(1) ?? "N/A";
+  const inflStr = inflVal?.toFixed(1) ?? "N/A";
+  const ogUrl = `/og?country=${encodeURIComponent(name)}&gdp=${encodeURIComponent(gdpStr)}&growth=${growthStr}&inflation=${inflStr}`;
+
+  return {
+    title: `${name} — Orbital OS Economic Dashboard`,
+    description: `Explore ${name}'s economic indicators: GDP ${gdpStr}, Growth ${growthStr}%, Inflation ${inflStr}%. Powered by World Bank data.`,
+    openGraph: {
+      title: `${name} — Economic Intelligence`,
+      description: `GDP: ${gdpStr} | Growth: ${growthStr}% | Inflation: ${inflStr}%`,
+      images: [{ url: ogUrl, width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${name} — Orbital OS`,
+      description: `GDP: ${gdpStr} | Growth: ${growthStr}% | Inflation: ${inflStr}%`,
+      images: [ogUrl],
+    },
+  };
+}
 
 const INDICATORS = {
   GDP_NOMINAL: "NY.GDP.MKTP.CD",

@@ -16,6 +16,16 @@ interface Props {
   secondaryTitle?: string;
 }
 
+const formatValue = (v: number): string => {
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return `${(v / 1e12).toFixed(1)}T`;
+  if (abs >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
+  if (abs < 1 && abs > 0) return v.toFixed(2);
+  return v.toFixed(1);
+};
+
 export default function EconomicChart({ data, secondaryData, title, secondaryTitle }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,7 +59,7 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
     const containerWidth = containerRef.current.clientWidth;
     const containerHeight = containerRef.current.clientHeight;
     
-    const margin = { top: 20, right: 20, bottom: 40, left: 45 };
+    const margin = { top: 16, right: 24, bottom: 36, left: 60 };
     const width = containerWidth - margin.left - margin.right;
     const height = containerHeight - margin.top - margin.bottom;
 
@@ -70,16 +80,19 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
       .domain(allYears)
       .range([0, width]);
 
-    const maxVal = d3.max([...chartData, ...secondaryChartData], d => d.value ?? 0) || 1;
+    // Include negative values for proper domain (e.g. GDP growth can be negative)
+    const allValues = [...chartData, ...secondaryChartData].map(d => d.value ?? 0);
+    const minVal = Math.min(0, d3.min(allValues) || 0);
+    const maxVal = d3.max(allValues) || 1;
     const y = d3.scaleLinear()
-      .domain([0, maxVal])
+      .domain([minVal, maxVal])
       .range([height, 0])
       .nice();
 
     // Glow Filters
     const defs = svg.append("defs");
     
-    const createGlowFilter = (id: string, color: string) => {
+    const createGlowFilter = (id: string) => {
       const filter = defs.append("filter")
         .attr("id", id)
         .attr("x", "-20%")
@@ -88,7 +101,7 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
         .attr("height", "140%");
 
       filter.append("feGaussianBlur")
-        .attr("stdDeviation", "2.5")
+        .attr("stdDeviation", "2")
         .attr("result", "coloredBlur");
       
       const feMerge = filter.append("feMerge");
@@ -98,27 +111,20 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
 
     const filterId1 = `glow-${Math.random().toString(36).substr(2, 9)}`;
     const filterId2 = `glow-${Math.random().toString(36).substr(2, 9)}`;
-    createGlowFilter(filterId1, "#00ff88");
-    createGlowFilter(filterId2, "#00aaff");
+    createGlowFilter(filterId1);
+    createGlowFilter(filterId2);
 
-    // Gradients
+    // Gradients for area fills
     const createGradient = (id: string, color: string) => {
       const gradient = defs.append("linearGradient")
         .attr("id", id)
-        .attr("x1", "0%")
-        .attr("y1", "0%")
-        .attr("x2", "0%")
-        .attr("y2", "100%");
+        .attr("x1", "0%").attr("y1", "0%")
+        .attr("x2", "0%").attr("y2", "100%");
 
-      gradient.append("stop")
-        .attr("offset", "5%")
-        .attr("stop-color", color)
-        .attr("stop-opacity", 0.2);
-
-      gradient.append("stop")
-        .attr("offset", "95%")
-        .attr("stop-color", color)
-        .attr("stop-opacity", 0);
+      gradient.append("stop").attr("offset", "0%")
+        .attr("stop-color", color).attr("stop-opacity", 0.25);
+      gradient.append("stop").attr("offset", "100%")
+        .attr("stop-color", color).attr("stop-opacity", 0.02);
     };
 
     const gradientId1 = `grad-${Math.random().toString(36).substr(2, 9)}`;
@@ -126,21 +132,34 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
     createGradient(gradientId1, "#00ff88");
     createGradient(gradientId2, "#00aaff");
 
-    // Grid lines
+    // Horizontal grid lines
     svg.append("g")
       .attr("class", "grid")
-      .attr("stroke", "#00ff8811")
-      .attr("stroke-dasharray", "3,3")
       .call(d3.axisLeft(y)
+        .ticks(5)
         .tickSize(-width)
         .tickFormat(() => "")
       )
-      .call(g => g.select(".domain").remove());
+      .call(g => {
+        g.select(".domain").remove();
+        g.selectAll(".tick line")
+          .attr("stroke", "rgba(0, 255, 136, 0.08)")
+          .attr("stroke-dasharray", "4,4");
+      });
 
-    // Areas
+    // Zero line for charts with negative values
+    if (minVal < 0) {
+      svg.append("line")
+        .attr("x1", 0).attr("x2", width)
+        .attr("y1", y(0)).attr("y2", y(0))
+        .attr("stroke", "rgba(255, 255, 255, 0.15)")
+        .attr("stroke-width", 1);
+    }
+
+    // Area fills
     const area = d3.area<DataPoint>()
       .x(d => x(String(d.year)) || 0)
-      .y0(height)
+      .y0(y(Math.max(0, minVal)))
       .y1(d => y(d.value ?? 0))
       .curve(d3.curveMonotoneX);
 
@@ -166,7 +185,7 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
       .datum(chartData)
       .attr("fill", "none")
       .attr("stroke", "#00ff88")
-      .attr("stroke-width", 2)
+      .attr("stroke-width", 2.5)
       .attr("filter", `url(#${filterId1})`)
       .attr("d", line);
 
@@ -184,7 +203,7 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
         .datum(secondaryChartData)
         .attr("fill", "none")
         .attr("stroke", "#00aaff")
-        .attr("stroke-width", 2)
+        .attr("stroke-width", 2.5)
         .attr("filter", `url(#${filterId2})`)
         .attr("d", line);
 
@@ -198,84 +217,84 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
     }
 
     // X Axis
+    const tickInterval = Math.max(1, Math.ceil(allYears.length / 8));
     svg.append("g")
       .attr("transform", `translate(0,${height})`)
-      .attr("color", "#00ff8844")
-      .style("font-size", "9px")
       .call(d3.axisBottom(x)
-        .tickValues(allYears.filter((d, i) => i % Math.ceil(allYears.length / 8) === 0))
+        .tickValues(allYears.filter((_, i) => i % tickInterval === 0))
         .tickSize(0)
-        .tickPadding(10)
+        .tickPadding(12)
       )
       .call(g => {
         g.select(".domain").remove();
         g.selectAll("text")
-          .style("text-shadow", "0 0 5px rgba(0, 255, 136, 0.5)")
-          .style("font-family", "monospace");
+          .attr("fill", "rgba(0, 255, 136, 0.7)")
+          .style("font-size", "11px")
+          .style("font-family", "'JetBrains Mono', 'Fira Code', monospace")
+          .style("font-weight", "600");
       });
 
     // Y Axis
     svg.append("g")
-      .attr("color", "#00ff8844")
-      .style("font-size", "9px")
       .call(d3.axisLeft(y)
         .ticks(5)
-        .tickFormat(val => {
-          const v = val.valueOf();
-          if (v >= 1000000000000) return `${(v / 1000000000000).toFixed(1)}T`;
-          if (v >= 1000000000) return `${(v / 1000000000).toFixed(1)}B`;
-          if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
-          if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-          return String(v);
-        })
+        .tickFormat(val => formatValue(val.valueOf()))
         .tickSize(0)
         .tickPadding(10)
       )
       .call(g => {
         g.select(".domain").remove();
         g.selectAll("text")
-          .style("text-shadow", "0 0 5px rgba(0, 255, 136, 0.5)")
-          .style("font-family", "monospace");
+          .attr("fill", "rgba(0, 255, 136, 0.7)")
+          .style("font-size", "11px")
+          .style("font-family", "'JetBrains Mono', 'Fira Code', monospace")
+          .style("font-weight", "600");
       });
 
-    // Tooltip interaction
+    // Interactive tooltip
     const tooltipGroup = svg.append("g").style("display", "none");
     
     tooltipGroup.append("line")
-      .attr("stroke", "#00ff8844")
+      .attr("stroke", "rgba(0, 255, 136, 0.3)")
       .attr("stroke-width", 1)
+      .attr("stroke-dasharray", "4,3")
       .attr("y1", 0)
       .attr("y2", height);
 
     const dot1 = tooltipGroup.append("circle")
       .attr("fill", "#00ff88")
-      .attr("r", 4)
+      .attr("r", 5)
       .attr("stroke", "#02040a")
       .attr("stroke-width", 2);
 
     const dot2 = tooltipGroup.append("circle")
       .attr("fill", "#00aaff")
-      .attr("r", 4)
+      .attr("r", 5)
       .attr("stroke", "#02040a")
-      .attr("stroke-width", 2);
+      .attr("stroke-width", 2)
+      .style("display", "none");
 
-    const tooltipRect = tooltipGroup.append("rect")
-      .attr("fill", "rgba(2, 4, 10, 0.9)")
-      .attr("stroke", "rgba(0, 255, 136, 0.3)")
-      .attr("rx", 4)
-      .attr("ry", 4)
-      .attr("width", 140)
-      .attr("height", 60);
-
-    const tooltipText = tooltipGroup.append("text")
-      .attr("fill", "#00ff88")
-      .style("font-size", "10px")
-      .style("font-family", "monospace");
+    // Tooltip box
+    const tooltipForeign = tooltipGroup.append("foreignObject")
+      .attr("width", 180)
+      .attr("height", 100);
+    
+    const tooltipDiv = tooltipForeign.append("xhtml:div")
+      .style("background", "rgba(2, 4, 10, 0.95)")
+      .style("border", "1px solid rgba(0, 255, 136, 0.3)")
+      .style("border-radius", "8px")
+      .style("padding", "10px 12px")
+      .style("font-family", "'JetBrains Mono', monospace")
+      .style("font-size", "11px")
+      .style("color", "white")
+      .style("pointer-events", "none")
+      .style("white-space", "nowrap");
 
     const overlay = svg.append("rect")
       .attr("width", width)
       .attr("height", height)
-      .attr("fill", "transparent");
+      .attr("fill", "transparent")
+      .style("cursor", "crosshair");
 
     overlay.on("mousemove touchmove", (event) => {
       const [mouseX] = d3.pointer(event);
@@ -291,45 +310,34 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
 
       if (d1 || d2) {
         const posX = x(year) || 0;
-        tooltipGroup.style("display", null)
-          .attr("transform", `translate(${posX}, 0)`);
+        tooltipGroup.style("display", null);
+        
+        // Update vertical line position
+        tooltipGroup.select("line").attr("x1", posX).attr("x2", posX);
 
-        let tooltipLines = [`YEAR: ${year}`];
+        let html = `<div style="color:rgba(0,255,136,0.5);font-size:9px;letter-spacing:0.15em;margin-bottom:6px;font-weight:700">${year}</div>`;
         
         if (d1) {
           const posY1 = y(d1.value ?? 0);
-          dot1.style("display", null).attr("transform", `translate(0, ${posY1})`);
-          tooltipLines.push(`${title}: ${(d1.value ?? 0).toLocaleString()}`);
+          dot1.style("display", null).attr("cx", posX).attr("cy", posY1);
+          html += `<div style="color:#00ff88;font-weight:700">${formatValue(d1.value ?? 0)}</div>`;
         } else {
           dot1.style("display", "none");
         }
 
         if (d2) {
           const posY2 = y(d2.value ?? 0);
-          dot2.style("display", null).attr("transform", `translate(0, ${posY2})`);
-          tooltipLines.push(`${secondaryTitle || "COMPARE"}: ${(d2.value ?? 0).toLocaleString()}`);
+          dot2.style("display", null).attr("cx", posX).attr("cy", posY2);
+          html += `<div style="color:#00aaff;font-weight:700;margin-top:2px">${formatValue(d2.value ?? 0)}</div>`;
         } else {
           dot2.style("display", "none");
         }
 
-        tooltipText.selectAll("tspan").remove();
-        tooltipLines.forEach((line, i) => {
-          tooltipText.append("tspan")
-            .attr("x", posX + 150 > width ? -130 : 10)
-            .attr("dy", i === 0 ? 0 : "1.2em")
-            .text(line)
-            .attr("fill", i === 1 ? "#00ff88" : i === 2 ? "#00aaff" : "white");
-        });
+        tooltipDiv.html(html);
 
-        const textNode = tooltipText.node() as SVGTextElement;
-        const bbox = textNode.getBBox();
-        tooltipRect
-          .attr("x", bbox.x - 5)
-          .attr("y", bbox.y - 5)
-          .attr("width", bbox.width + 10)
-          .attr("height", bbox.height + 10);
-        
-        tooltipText.attr("y", (d1 ? y(d1.value ?? 0) : height/2) - bbox.height/2);
+        // Position tooltip to left or right of cursor
+        const tooltipX = posX + 180 > width ? posX - 190 : posX + 12;
+        tooltipForeign.attr("x", tooltipX).attr("y", 10);
       }
     });
 
@@ -345,23 +353,28 @@ export default function EconomicChart({ data, secondaryData, title, secondaryTit
       whileInView={shouldAnimate ? { opacity: 1, scale: 1 } : {}}
       viewport={{ once: true }}
       transition={{ duration: 0.5, ease: "easeOut" }}
-      className="w-full h-80 glass-panel p-6 rounded-xl relative overflow-hidden group"
+      className="w-full glass-panel p-5 md:p-6 rounded-xl relative overflow-hidden group"
     >
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-[#00ff88] text-[10px] font-black tracking-[0.3em] uppercase opacity-70 group-hover:opacity-100 transition-opacity flex items-center gap-2">
-          <span className="w-1.5 h-1.5 bg-[#00ff88] rounded-full animate-pulse"></span>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-[#00ff88] text-[10px] md:text-xs font-black tracking-[0.2em] uppercase opacity-80 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+          <span className="w-1.5 h-1.5 bg-[#00ff88] rounded-full animate-pulse" />
           {title}
         </h3>
-        <div className="text-[8px] font-mono text-[#00ff88]/30">v2.5_D3_ENGINE</div>
+        {secondaryTitle && (
+          <div className="flex items-center gap-4 text-[9px] md:text-[10px] font-bold tracking-wider">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-[2px] bg-[#00ff88] inline-block" />{title}</span>
+            <span className="flex items-center gap-1.5 text-[#00aaff]"><span className="w-3 h-[2px] bg-[#00aaff] inline-block" />{secondaryTitle}</span>
+          </div>
+        )}
       </div>
       
-      <div ref={containerRef} className="w-full h-[220px]">
-        <svg ref={svgRef} className="overflow-visible"></svg>
+      <div ref={containerRef} className="w-full h-[260px] md:h-[300px]">
+        <svg ref={svgRef} className="overflow-visible" />
       </div>
 
       {/* Decorative tactical corners */}
-      <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00ff8844]"></div>
-      <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00ff8844]"></div>
+      <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-[#00ff8833]" />
+      <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-[#00ff8833]" />
     </motion.div>
   );
 }
