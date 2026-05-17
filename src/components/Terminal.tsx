@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -33,66 +33,7 @@ export default function Terminal() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
 
-  useEffect(() => {
-    if (isOpen && terminalRef.current && !xtermRef.current) {
-      const term = new XTerm({
-        cursorBlink: true,
-        theme: {
-          background: "#02040a",
-          foreground: "#00ff88",
-          cursor: "#00ff88",
-          selectionBackground: "rgba(0, 255, 136, 0.3)",
-        },
-        fontFamily: "var(--font-geist-mono), monospace",
-        fontSize: 14,
-        letterSpacing: 1,
-      });
-
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-      term.open(terminalRef.current);
-      fitAddon.fit();
-
-      term.writeln("\x1b[1;32mORBITAL_OS TERMINAL INTERFACE [Version 2.5.0]\x1b[0m");
-      term.writeln("Type 'help' for available commands.");
-      term.write("\r\n" + PROMPT);
-
-      term.onData((data) => {
-        const char = data;
-        if (char === "\r") {
-          // Enter
-          const cmd = inputBuffer.current.trim();
-          term.write("\r\n");
-          handleCommand(cmd, term);
-          inputBuffer.current = "";
-        } else if (char === "\u007f") {
-          // Backspace
-          if (inputBuffer.current.length > 0) {
-            inputBuffer.current = inputBuffer.current.slice(0, -1);
-            term.write("\b \b");
-          }
-        } else if (char >= " " && char <= "~") {
-          inputBuffer.current += char;
-          term.write(char);
-        }
-      });
-
-      xtermRef.current = term;
-      fitAddonRef.current = fitAddon;
-    }
-
-    if (isOpen && xtermRef.current) {
-      setTimeout(() => fitAddonRef.current?.fit(), 100);
-      xtermRef.current.focus();
-    }
-
-    return () => {
-      // We don't necessarily want to destroy it every time it closes if we want to keep history
-      // but for simplicity and current requirements, we'll keep it simple.
-    };
-  }, [isOpen]);
-
-  const handleCommand = async (command: string, term: XTerm) => {
+  const handleCommand = useCallback(async (command: string, term: XTerm) => {
     const args = command.toLowerCase().split(" ");
     const cmd = args[0];
 
@@ -157,7 +98,66 @@ export default function Terminal() {
     }
 
     term.write(PROMPT);
-  };
+  }, [router]);
+
+  useEffect(() => {
+    if (isOpen && terminalRef.current && !xtermRef.current) {
+      const term = new XTerm({
+        cursorBlink: true,
+        theme: {
+          background: "#02040a",
+          foreground: "#00ff88",
+          cursor: "#00ff88",
+          selectionBackground: "rgba(0, 255, 136, 0.3)",
+        },
+        fontFamily: "var(--font-geist-mono), monospace",
+        fontSize: 14,
+        letterSpacing: 1,
+      });
+
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current);
+      fitAddon.fit();
+
+      term.writeln("\x1b[1;32mORBITAL_OS TERMINAL INTERFACE [Version 2.5.0]\x1b[0m");
+      term.writeln("Type 'help' for available commands.");
+      term.write("\r\n" + PROMPT);
+
+      term.onData((data) => {
+        const char = data;
+        if (char === "\r") {
+          // Enter
+          const cmd = inputBuffer.current.trim();
+          term.write("\r\n");
+          handleCommand(cmd, term);
+          inputBuffer.current = "";
+        } else if (char === "\u007f") {
+          // Backspace
+          if (inputBuffer.current.length > 0) {
+            inputBuffer.current = inputBuffer.current.slice(0, -1);
+            term.write("\b \b");
+          }
+        } else if (char >= " " && char <= "~") {
+          inputBuffer.current += char;
+          term.write(char);
+        }
+      });
+
+      xtermRef.current = term;
+      fitAddonRef.current = fitAddon;
+    }
+
+    if (isOpen && xtermRef.current) {
+      setTimeout(() => fitAddonRef.current?.fit(), 100);
+      xtermRef.current.focus();
+    }
+
+    return () => {
+      // We don't necessarily want to destroy it every time it closes if we want to keep history
+      // but for simplicity and current requirements, we'll keep it simple.
+    };
+  }, [isOpen, handleCommand]);
 
   return (
     <AnimatePresence>

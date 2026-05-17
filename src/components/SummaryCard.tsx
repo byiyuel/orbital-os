@@ -34,7 +34,10 @@ export default function SummaryCard({ title, value, icon, trend, type }: Summary
       className="glass-panel p-8 rounded-2xl relative overflow-hidden group hover:border-[#00ff88]/50 transition-all duration-500 hover:translate-y-[-4px]"
     >
       <div className="flex justify-between items-start mb-6">
-        <span className="text-[9px] font-black tracking-[0.2em] uppercase opacity-40 group-hover:opacity-100 transition-opacity">// {title}</span>
+        <span className="text-[9px] font-black tracking-[0.2em] uppercase opacity-40 group-hover:opacity-100 transition-opacity">
+          {"// "}
+          {title}
+        </span>
         <div className="text-[#00ff88]/30 group-hover:text-[#00ff88] transition-colors">{icon}</div>
       </div>
       

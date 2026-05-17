@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import React, { useState, useEffect, useTransition, useCallback } from "react";
 import { adaptWorldBankDataForD3, getLatestValue, formatFinancial } from "@/utils/adapters";
 import EconomicChart from "@/components/charts/EconomicChart";
 import SummaryCard from "@/components/SummaryCard";
@@ -66,17 +66,7 @@ export default function CountryDashboard({ countryCode, initialData }: Dashboard
     });
   };
 
-  useEffect(() => {
-    const compareCode = searchParams.get("compare");
-    if (compareCode && compareCode !== countryCode && !compareCountry) {
-      handleCompareSelect(compareCode);
-      setIsComparing(true);
-    }
-  }, [searchParams, countryCode]);
-
-  const countryName = initialData.gdpRaw?.[1]?.[0]?.country?.value || countryCode.toUpperCase();
-
-  const handleCompareSelect = async (code: string) => {
+  const handleCompareSelect = useCallback(async (code: string) => {
     setIsLoadingCompare(true);
     setSearchQuery("");
     try {
@@ -107,7 +97,17 @@ export default function CountryDashboard({ countryCode, initialData }: Dashboard
       console.error("COMPARE_FAILURE", e);
     }
     setIsLoadingCompare(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    const compareCode = searchParams.get("compare");
+    if (compareCode && compareCode !== countryCode && !compareCountry) {
+      handleCompareSelect(compareCode);
+      setIsComparing(true);
+    }
+  }, [searchParams, countryCode, compareCountry, handleCompareSelect]);
+
+  const countryName = initialData.gdpRaw?.[1]?.[0]?.country?.value || countryCode.toUpperCase();
 
   const filteredCountries = TOP_COUNTRIES.filter(c => 
     c.code !== countryCode && 

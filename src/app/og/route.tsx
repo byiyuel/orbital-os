@@ -109,7 +109,8 @@ export async function GET(request: NextRequest) {
                   textTransform: "uppercase",
                 }}
               >
-                // {metric.label}
+                {"// "}
+                {metric.label}
               </div>
               <div
                 style={{

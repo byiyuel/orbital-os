@@ -59,7 +59,6 @@ export default function Globe() {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState("INITIALIZING");
-  const [terminalId, setTerminalId] = useState("");
   const [hoveredCountry, setHoveredCountry] = useState<any>(null);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -76,7 +75,8 @@ export default function Globe() {
   // Check prefers-reduced-motion
   const [shouldAnimate, setShouldAnimate] = useState(true);
   useEffect(() => {
-    setShouldAnimate(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setShouldAnimate(!mediaQuery.matches);
   }, []);
 
   // Auto-play timer
@@ -97,10 +97,8 @@ export default function Globe() {
   }, [activeLayer, activeYear]);
 
   const handlePlayToggle = useCallback(() => setIsPlaying((p) => !p), []);
-  const handleYearChange = useCallback((y: number) => setActiveYear(y), []);
 
   useEffect(() => {
-    setTerminalId(Math.random().toString(36).substr(2, 9).toUpperCase());
     if (!canvasRef.current || !containerRef.current) return;
 
     let mounted = true;
@@ -163,7 +161,7 @@ export default function Globe() {
     globeGroup.add(new THREE.Mesh(rimGeo, rimMat));
 
     let countries: any[] = [];
-    let gdpData: Record<string, any> = { ...FALLBACK_GDP };
+    const gdpData: Record<string, any> = { ...FALLBACK_GDP };
     // Closure-local refs for current layer/year (updated via redrawRef)
     let currentLayer: LayerType = "gdp";
     let currentYear: number = 2023;
@@ -606,7 +604,8 @@ export default function Globe() {
             </div>
             
             <div className="mt-8 text-[7px] opacity-20 uppercase font-black tracking-[0.2em] italic">
-              // {isMobile ? 'Use ENTER button for sector analysis' : 'Click to decrypt sector analysis'}
+              {"// "}
+              {isMobile ? 'Use ENTER button for sector analysis' : 'Click to decrypt sector analysis'}
             </div>
           </motion.div>
         )}

@@ -12,7 +12,7 @@ export default function ChartSkeleton() {
             key={i}
             className="flex-1 bg-emerald-500/10 animate-pulse rounded-t-sm border-x border-t border-emerald-500/5 shadow-[0_0_10px_rgba(16,185,129,0.05)]"
             style={{
-              height: `${Math.floor(Math.random() * 60) + 20}%`,
+              height: `${((i * 7) % 60) + 20}%`,
               animationDelay: `${i * 100}ms`
             }}
           ></div>
