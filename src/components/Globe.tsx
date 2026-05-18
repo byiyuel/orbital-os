@@ -242,35 +242,50 @@ export default function Globe() {
         setLoading(false);
 
         setSyncStatus("LOADING_DATA");
-        // Fetch all three indicators for full historical range
+        // Fetch all three indicators for full historical range concurrently
         const indicators = [
           { key: "NY.GDP.PCAP.CD", label: "GDP per capita" },
           { key: "FP.CPI.TOTL.ZG", label: "Inflation" },
           { key: "NY.GDP.MKTP.KD.ZG", label: "Growth" },
         ];
         
-        for (const ind of indicators) {
-          const entries = await fetchIndicator(ind.key, `${YEAR_MIN}:${YEAR_MAX}`);
-          if (!mounted) return;
+        const fetchPromises = indicators.map(ind =>
+          fetchIndicator(ind.key, `${YEAR_MIN}:${YEAR_MAX}`)
+            .then(entries => ({ key: ind.key, entries }))
+        );
+
+        const results = await Promise.all(fetchPromises);
+        if (!mounted) return;
+
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          const indKey = result.key;
+          const entries = result.entries;
           
-          if (!indicatorDataRef.current[ind.key]) {
-            indicatorDataRef.current[ind.key] = {};
+          if (!indicatorDataRef.current[indKey]) {
+            indicatorDataRef.current[indKey] = {};
           }
           
-          entries.forEach((v: any) => {
-            if (v.value == null || !v.countryiso3code) return;
+          const currentIndicatorData = indicatorDataRef.current[indKey];
+          const isGDP = indKey === "NY.GDP.PCAP.CD";
+
+          for (let j = 0; j < entries.length; j++) {
+            const v = entries[j];
+            if (v.value == null || !v.countryiso3code) continue;
             const iso3 = v.countryiso3code;
             const year = parseInt(v.date);
-            if (isNaN(year)) return;
-            if (!indicatorDataRef.current[ind.key][iso3]) {
-              indicatorDataRef.current[ind.key][iso3] = {};
+            if (isNaN(year)) continue;
+
+            if (!currentIndicatorData[iso3]) {
+              currentIndicatorData[iso3] = {};
             }
-            indicatorDataRef.current[ind.key][iso3][year] = v.value;
+            currentIndicatorData[iso3][year] = v.value;
+
             // Also populate gdpData for tooltip/name fallback
-            if (ind.key === "NY.GDP.PCAP.CD" && (!gdpData[iso3] || year > (gdpData[iso3].date || 0))) {
+            if (isGDP && (!gdpData[iso3] || year > (gdpData[iso3].date || 0))) {
               gdpData[iso3] = { gdp: v.value, name: v.country?.value || iso3, date: year };
             }
-          });
+          }
         }
         
         setSyncStatus("READY");
