@@ -32,12 +32,22 @@ async function fetchCountryData(code: string) {
   process(infl?.[1] as WBEntry[] | null, "inflation");
 
   const ts = Array.from(yearMap.values()).sort((a, b) => a.year - b.year);
+
+  let gdp = null, gdpGrowth = null, inflation = null;
+  for (let i = ts.length - 1; i >= 0; i--) {
+    const e = ts[i];
+    if (gdp === null && e.gdp !== null) gdp = e.gdp;
+    if (gdpGrowth === null && e.gdpGrowth !== null) gdpGrowth = e.gdpGrowth;
+    if (inflation === null && e.inflation !== null) inflation = e.inflation;
+    if (gdp !== null && gdpGrowth !== null && inflation !== null) break;
+  }
+
   return {
     country: name, code: c,
     metrics: {
-      gdp: ts.findLast(e => e.gdp !== null)?.gdp ?? null,
-      gdpGrowth: ts.findLast(e => e.gdpGrowth !== null)?.gdpGrowth ?? null,
-      inflation: ts.findLast(e => e.inflation !== null)?.inflation ?? null,
+      gdp,
+      gdpGrowth,
+      inflation,
     },
     timeSeries: ts,
   };
