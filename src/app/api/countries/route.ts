@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
   if (!limit.success) return rateLimitResponse(limit.resetIn);
 
   const { searchParams } = new URL(request.url);
-  const search = searchParams.get("search")?.trim().toLowerCase();
+  const search = searchParams.get("search")?.slice(0, 100).trim().toLowerCase();
 
   const filtered = search
     ? COUNTRIES.filter(
