@@ -44,10 +44,8 @@ const COUNTRIES = [
  * Supports ?search= query parameter for filtering by name or code.
  */
 export async function GET(request: NextRequest) {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "127.0.0.1";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ip = (request as any).ip ?? "127.0.0.1";
   const limit = checkRateLimit(ip);
   if (!limit.success) return rateLimitResponse(limit.resetIn);
 
