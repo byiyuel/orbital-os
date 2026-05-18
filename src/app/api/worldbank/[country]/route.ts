@@ -98,19 +98,28 @@ export async function GET(
       (a, b) => a.year - b.year
     );
 
-    // Build latest metrics
-    const latestGdp = timeSeries.findLast((e) => e.gdp !== null);
-    const latestGrowth = timeSeries.findLast((e) => e.gdpGrowth !== null);
-    const latestInflation = timeSeries.findLast((e) => e.inflation !== null);
+    // Build latest metrics via a single backwards traversal
+    let gdp: number | null = null;
+    let gdpGrowth: number | null = null;
+    let inflation: number | null = null;
+
+    for (let i = timeSeries.length - 1; i >= 0; i--) {
+      const e = timeSeries[i];
+      if (gdp === null && e.gdp !== null) gdp = e.gdp;
+      if (gdpGrowth === null && e.gdpGrowth !== null) gdpGrowth = e.gdpGrowth;
+      if (inflation === null && e.inflation !== null) inflation = e.inflation;
+
+      if (gdp !== null && gdpGrowth !== null && inflation !== null) break;
+    }
 
     return NextResponse.json(
       {
         country: countryName,
         code: countryCode,
         metrics: {
-          gdp: latestGdp?.gdp ?? null,
-          gdpGrowth: latestGrowth?.gdpGrowth ?? null,
-          inflation: latestInflation?.inflation ?? null,
+          gdp,
+          gdpGrowth,
+          inflation,
         },
         timeSeries,
         fetchedAt: new Date().toISOString(),
