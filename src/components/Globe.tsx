@@ -249,10 +249,12 @@ export default function Globe() {
           { key: "NY.GDP.MKTP.KD.ZG", label: "Growth" },
         ];
         
-        for (const ind of indicators) {
-          const entries = await fetchIndicator(ind.key, `${YEAR_MIN}:${YEAR_MAX}`);
-          if (!mounted) return;
-          
+        const fetchPromises = indicators.map(ind => fetchIndicator(ind.key, `${YEAR_MIN}:${YEAR_MAX}`));
+        const results = await Promise.all(fetchPromises);
+        if (!mounted) return;
+
+        indicators.forEach((ind, i) => {
+          const entries = results[i];
           if (!indicatorDataRef.current[ind.key]) {
             indicatorDataRef.current[ind.key] = {};
           }
@@ -271,7 +273,7 @@ export default function Globe() {
               gdpData[iso3] = { gdp: v.value, name: v.country?.value || iso3, date: year };
             }
           });
-        }
+        });
         
         setSyncStatus("READY");
         drawMap();
