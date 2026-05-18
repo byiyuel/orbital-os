@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
-import {
-  fetchWithCache,
-  WB_API_BASE,
-  WB_INDICATORS,
-} from "@/lib/cache";
+import { fetchWithCache, WB_API_BASE, WB_INDICATORS } from "@/lib/cache";
 
 interface WorldBankEntry {
   date: string;
@@ -27,7 +23,7 @@ interface TimeSeriesEntry {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ country: string }> }
+  { params }: { params: Promise<{ country: string }> },
 ) {
   const { country } = await params;
   const countryCode = country.toUpperCase();
@@ -44,13 +40,13 @@ export async function GET(
     // Fetch all three indicators in parallel from World Bank
     const [gdpData, growthData, inflationData] = await Promise.all([
       fetchWithCache(
-        `${WB_API_BASE}/country/${countryCode}/indicator/${WB_INDICATORS.GDP_NOMINAL}?format=json&date=2010:2024&per_page=50`
+        `${WB_API_BASE}/country/${countryCode}/indicator/${WB_INDICATORS.GDP_NOMINAL}?format=json&date=2010:2024&per_page=50`,
       ).catch(() => null),
       fetchWithCache(
-        `${WB_API_BASE}/country/${countryCode}/indicator/${WB_INDICATORS.GDP_GROWTH}?format=json&date=2010:2024&per_page=50`
+        `${WB_API_BASE}/country/${countryCode}/indicator/${WB_INDICATORS.GDP_GROWTH}?format=json&date=2010:2024&per_page=50`,
       ).catch(() => null),
       fetchWithCache(
-        `${WB_API_BASE}/country/${countryCode}/indicator/${WB_INDICATORS.INFLATION}?format=json&date=2010:2024&per_page=50`
+        `${WB_API_BASE}/country/${countryCode}/indicator/${WB_INDICATORS.INFLATION}?format=json&date=2010:2024&per_page=50`,
       ).catch(() => null),
     ]);
 
@@ -58,7 +54,7 @@ export async function GET(
     if (!gdpData?.[1] && !growthData?.[1] && !inflationData?.[1]) {
       return NextResponse.json(
         { error: "Country not found or no data available", code: countryCode },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -72,7 +68,7 @@ export async function GET(
     const yearMap = new Map<number, TimeSeriesEntry>();
     const processEntries = (
       entries: WorldBankEntry[] | null,
-      field: keyof TimeSeriesEntry
+      field: keyof TimeSeriesEntry,
     ) => {
       if (!entries) return;
       for (const entry of entries) {
@@ -95,13 +91,21 @@ export async function GET(
     processEntries(inflationData?.[1] as WorldBankEntry[] | null, "inflation");
 
     const timeSeries = Array.from(yearMap.values()).sort(
-      (a, b) => a.year - b.year
+      (a, b) => a.year - b.year,
     );
 
     // Build latest metrics
-    const latestGdp = timeSeries.findLast((e) => e.gdp !== null);
-    const latestGrowth = timeSeries.findLast((e) => e.gdpGrowth !== null);
-    const latestInflation = timeSeries.findLast((e) => e.inflation !== null);
+    let latestGdp: TimeSeriesEntry | undefined;
+    let latestGrowth: TimeSeriesEntry | undefined;
+    let latestInflation: TimeSeriesEntry | undefined;
+
+    for (let i = timeSeries.length - 1; i >= 0; i--) {
+      const e = timeSeries[i];
+      if (!latestGdp && e.gdp !== null) latestGdp = e;
+      if (!latestGrowth && e.gdpGrowth !== null) latestGrowth = e;
+      if (!latestInflation && e.inflation !== null) latestInflation = e;
+      if (latestGdp && latestGrowth && latestInflation) break;
+    }
 
     return NextResponse.json(
       {
@@ -119,7 +123,7 @@ export async function GET(
         headers: {
           "X-Rate-Limit-Remaining": limit.remaining.toString(),
         },
-      }
+      },
     );
   } catch (error) {
     console.error(`[API] worldbank/${countryCode} error:`, error);
@@ -129,7 +133,7 @@ export async function GET(
         message:
           error instanceof Error ? error.message : "Unknown error occurred",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
