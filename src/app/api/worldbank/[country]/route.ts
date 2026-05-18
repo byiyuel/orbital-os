@@ -29,10 +29,8 @@ export async function GET(
   const countryCode = country.toUpperCase();
 
   // Rate limiting
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "127.0.0.1";
+  // @ts-expect-error - 'ip' is supported on some platforms
+  const ip = request.ip ?? request.headers.get("x-real-ip") ?? "127.0.0.1";
   const limit = checkRateLimit(ip);
   if (!limit.success) return rateLimitResponse(limit.resetIn);
 
