@@ -9,6 +9,7 @@ import { Activity, Globe as GlobeIcon, Zap, Shield, Cpu } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { type LayerType, getColor, LAYER_CONFIGS, YEAR_MIN, YEAR_MAX } from "@/lib/color-scales";
 import LayerSelector from "@/components/globe/LayerSelector";
+import { escapeHtml } from "@/utils/sanitize";
 import Legend from "@/components/globe/Legend";
 import TimelineSlider from "@/components/globe/TimelineSlider";
 
@@ -386,10 +387,10 @@ export default function Globe() {
             tooltipRef.current.innerHTML = `
               <div class="flex items-center gap-2 mb-1">
                 <span class="w-1.5 h-1.5 bg-[#00ff88] rounded-full shadow-[0_0_5px_#00ff88]"></span>
-                <span class="font-bold tracking-tight">${country.properties.name.toUpperCase()}</span>
+                <span class="font-bold tracking-tight">${escapeHtml(country.properties.name.toUpperCase())}</span>
               </div>
               <div class="text-[9px] text-[#00ff88]/60 font-mono tracking-widest">
-                NODE: ${iso3} | GDP: ${data?.gdp ? "$" + (data.gdp/1e9).toFixed(1) + "B" : "SYNCING"}
+                NODE: ${escapeHtml(iso3)} | GDP: ${data?.gdp ? "$" + (data.gdp/1e9).toFixed(1) + "B" : "SYNCING"}
               </div>
             `;
           }
