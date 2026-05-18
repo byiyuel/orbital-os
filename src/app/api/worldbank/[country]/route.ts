@@ -99,9 +99,20 @@ export async function GET(
     );
 
     // Build latest metrics
-    const latestGdp = timeSeries.findLast((e) => e.gdp !== null);
-    const latestGrowth = timeSeries.findLast((e) => e.gdpGrowth !== null);
-    const latestInflation = timeSeries.findLast((e) => e.inflation !== null);
+    let latestGdp: TimeSeriesEntry | undefined = undefined;
+    let latestGrowth: TimeSeriesEntry | undefined = undefined;
+    let latestInflation: TimeSeriesEntry | undefined = undefined;
+
+    for (let i = timeSeries.length - 1; i >= 0; i--) {
+      const e = timeSeries[i];
+      if (latestGdp === undefined && e.gdp !== null) latestGdp = e;
+      if (latestGrowth === undefined && e.gdpGrowth !== null) latestGrowth = e;
+      if (latestInflation === undefined && e.inflation !== null) latestInflation = e;
+
+      if (latestGdp !== undefined && latestGrowth !== undefined && latestInflation !== undefined) {
+        break;
+      }
+    }
 
     return NextResponse.json(
       {
