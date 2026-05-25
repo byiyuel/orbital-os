@@ -13,6 +13,7 @@ interface RateLimitEntry {
 }
 
 const rateLimitMap = new Map<string, RateLimitEntry>();
+let nextCleanupTime = Date.now() + 10000;
 
 /**
  * Check rate limit for a given IP address.
@@ -25,14 +26,17 @@ export function checkRateLimit(ip: string): {
 } {
   const now = Date.now();
 
-  // Lazy cleanup: remove expired entries (max 50 per call to bound work)
-  let cleaned = 0;
-  for (const [key, entry] of rateLimitMap) {
-    if (cleaned >= 50) break;
-    if (now > entry.resetTime) {
-      rateLimitMap.delete(key);
-      cleaned++;
-    }
+  // Async lazy cleanup to avoid blocking the request thread
+  if (now > nextCleanupTime) {
+    nextCleanupTime = now + 10000; // Schedule next cleanup in 10s
+    setTimeout(() => {
+      const cleanupTime = Date.now();
+      for (const [key, entry] of rateLimitMap) {
+        if (cleanupTime > entry.resetTime) {
+          rateLimitMap.delete(key);
+        }
+      }
+    }, 0);
   }
 
   const entry = rateLimitMap.get(ip);
