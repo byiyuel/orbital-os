@@ -6,6 +6,7 @@
 
 const WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS = 30;
+const CLEANUP_INTERVAL_MS = 10000; // 10 seconds
 
 interface RateLimitEntry {
   count: number;
@@ -13,6 +14,27 @@ interface RateLimitEntry {
 }
 
 const rateLimitMap = new Map<string, RateLimitEntry>();
+let isCleanupScheduled = false;
+
+function scheduleCleanup() {
+  if (isCleanupScheduled) return;
+  isCleanupScheduled = true;
+
+  const timer = setTimeout(() => {
+    isCleanupScheduled = false;
+    const now = Date.now();
+    for (const [key, entry] of rateLimitMap) {
+      if (now > entry.resetTime) {
+        rateLimitMap.delete(key);
+      }
+    }
+  }, CLEANUP_INTERVAL_MS);
+
+  // Unref the timer so it doesn't block Node.js process exit
+  if (typeof timer.unref === "function") {
+    timer.unref();
+  }
+}
 
 /**
  * Check rate limit for a given IP address.
@@ -25,15 +47,7 @@ export function checkRateLimit(ip: string): {
 } {
   const now = Date.now();
 
-  // Lazy cleanup: remove expired entries (max 50 per call to bound work)
-  let cleaned = 0;
-  for (const [key, entry] of rateLimitMap) {
-    if (cleaned >= 50) break;
-    if (now > entry.resetTime) {
-      rateLimitMap.delete(key);
-      cleaned++;
-    }
-  }
+  scheduleCleanup();
 
   const entry = rateLimitMap.get(ip);
 
